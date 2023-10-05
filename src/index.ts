@@ -11,7 +11,7 @@ type Song = Record<{
     duration: int64; // seconds
     releaseDate: string;
     uploadedAt: nat64;
-}>
+}>;
 
 type SongPayload = Record<{
     fileName: string;
@@ -21,7 +21,7 @@ type SongPayload = Record<{
     genre: string;
     duration: int64; // seconds
     releaseDate: string;
-}>
+}>;
 
 type Playlist = Record<{
     id: string;
@@ -32,12 +32,12 @@ type Playlist = Record<{
     totalDuration: int64; // seconds
     createdAt: nat64;
     updatedAt: Opt<nat64>;
-}>
+}>;
 
-type PlaylistPayload = Record <{
+type PlaylistPayload = Record<{
     name: string;
     description: string;
-}>
+}>;
 
 const songsStorage = new StableBTreeMap<string, Song>(0, 44, 1024);
 const playlistsStorage = new StableBTreeMap<string, Playlist>(1, 44, 1024);
@@ -48,21 +48,22 @@ const ErrMessages = {
     nonAdmin: (id: string) => `IC caller isn't the admin of the playlist with id ${id}.`,
     couldNotUpdate: (recordName: string, id: string) => `Couldn't update the ${recordName} with id=${id}, because record not found.`,
     couldNotRemove: (recordName: string, id: string) => `Couldn't remove the ${recordName} with id=${id}, because record not found.`,
-    alreadyExists: (recordName: string) => `${recordName} already exists.`
-}
+    alreadyExists: (recordName: string) => `${recordName} already exists.`,
+    invalidSongList: 'Invalid song list.',
+};
 
 // Create
 $update;
 export function uploadSong(payload: SongPayload): Result<Song, string> {
-    if (payload.fileName === "") {
+    if (!payload.fileName || !payload.fileName.trim()) {
         return Result.Err<Song, string>(ErrMessages.fieldCannotBeEmpty("File name"));
     }
 
-    if (payload.mimeType === "") {
+    if (!payload.mimeType || !payload.mimeType.trim()) {
         return Result.Err<Song, string>(ErrMessages.fieldCannotBeEmpty("File type"));
     }
 
-    if (payload.title === "") {
+    if (!payload.title || !payload.title.trim()) {
         return Result.Err<Song, string>(ErrMessages.fieldCannotBeEmpty("Title"));
     }
 
@@ -77,9 +78,13 @@ export function uploadSong(payload: SongPayload): Result<Song, string> {
     if (existingSong) {
         return Result.Err<Song, string>(ErrMessages.alreadyExists("Song"));
     }
-    
-    const song: Song = { id: uuidv4(), uploadedAt: ic.time(), ...payload };
-    
+
+    const song: Song = {
+        id: uuidv4(),
+        uploadedAt: ic.time(),
+        ...payload,
+    };
+
     try {
         songsStorage.insert(song.id, song);
     } catch (error) {
@@ -91,7 +96,7 @@ export function uploadSong(payload: SongPayload): Result<Song, string> {
 
 $update;
 export function createPlaylist(payload: PlaylistPayload): Result<Playlist, string> {
-    if (payload.name === "") {
+    if (!payload.name || !payload.name.trim()) {
         return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty("Playlist name"));
     }
 
@@ -107,10 +112,10 @@ export function createPlaylist(payload: PlaylistPayload): Result<Playlist, strin
         id: uuidv4(),
         admin: ic.caller(),
         songs: [],
-        totalDuration: BigInt(0),
+        totalDuration: int64(0),
         createdAt: ic.time(),
         updatedAt: Opt.None,
-        ...payload
+        ...payload,
     };
 
     try {
@@ -125,13 +130,13 @@ export function createPlaylist(payload: PlaylistPayload): Result<Playlist, strin
 // Read
 $query;
 export function getSong(id: string): Result<Song, string> {
-    if (id === "") {
+    if (!id || !id.trim()) {
         return Result.Err<Song, string>(ErrMessages.fieldCannotBeEmpty("Song id"));
     }
 
     return match(songsStorage.get(id), {
         Some: (song) => Result.Ok<Song, string>(song),
-        None: () => Result.Err<Song, string>(ErrMessages.recordWithIdNotFound("Song", id))
+        None: () => Result.Err<Song, string>(ErrMessages.recordWithIdNotFound("Song", id)),
     });
 }
 
@@ -142,13 +147,13 @@ export function getSongs(): Result<Vec<Song>, string> {
 
 $query;
 export function getPlaylist(id: string): Result<Playlist, string> {
-    if (id === "") {
+    if (!id || !id.trim()) {
         return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty("Playlist id"));
     }
 
     return match(playlistsStorage.get(id), {
         Some: (playlist) => Result.Ok<Playlist, string>(playlist),
-        None: () => Result.Err<Playlist, string>(ErrMessages.recordWithIdNotFound("Playlist", id))
+        None: () => Result.Err<Playlist, string>(ErrMessages.recordWithIdNotFound("Playlist", id)),
     });
 }
 
@@ -160,47 +165,55 @@ export function getPlaylists(): Result<Vec<Playlist>, string> {
 // Update
 $update;
 export function updatePlaylist(id: string, payload: PlaylistPayload): Result<Playlist, string> {
-    return match(playlistsStorage.get(id), {
-        Some: (playlist) => {
-            if (playlist.admin.toString() !== ic.caller().toString()) {
-                return Result.Err<Playlist,string>(ErrMessages.nonAdmin(id));
-            }
-
-            const updatedPlaylist: Playlist = {...playlist, ...payload, updatedAt: Opt.Some(ic.time())};
-
-            playlistsStorage.insert(playlist.id, updatedPlaylist);
-            return Result.Ok<Playlist, string>(updatedPlaylist);
-        },
-        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotUpdate('playlist', id))
-    });
-}
-
-$update;
-export function addSongsToPlaylist(id: string, songs: Vec<string>): Result<Playlist, string> {
-    if (songs.length === 0) {
-        return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty('Song list'));
+    if (!id || !id.trim()) {
+        return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty("Playlist id"));
     }
 
     return match(playlistsStorage.get(id), {
         Some: (playlist) => {
             if (playlist.admin.toString() !== ic.caller().toString()) {
-                return Result.Err<Playlist,string>(ErrMessages.nonAdmin(id));
+                return Result.Err<Playlist, string>(ErrMessages.nonAdmin(id));
             }
 
-            const updatedPlaylist: Playlist = {...playlist, updatedAt: Opt.Some(ic.time())};
+            const updatedPlaylist: Playlist = { ...playlist, ...payload, updatedAt: Opt.Some(ic.time()) };
+
+            playlistsStorage.insert(playlist.id, updatedPlaylist);
+            return Result.Ok<Playlist, string>(updatedPlaylist);
+        },
+        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotUpdate('playlist', id)),
+    });
+}
+
+$update;
+export function addSongsToPlaylist(id: string, songs: Vec<string>): Result<Playlist, string> {
+    if (!id || !id.trim()) {
+        return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty('Playlist id'));
+    }
+
+    if (!songs || songs.length === 0) {
+        return Result.Err<Playlist, string>(ErrMessages.invalidSongList);
+    }
+
+    return match(playlistsStorage.get(id), {
+        Some: (playlist) => {
+            if (playlist.admin.toString() !== ic.caller().toString()) {
+                return Result.Err<Playlist, string>(ErrMessages.nonAdmin(id));
+            }
+
+            const updatedPlaylist: Playlist = { ...playlist, updatedAt: Opt.Some(ic.time()) };
 
             let addFlag = false;
-            songs.forEach(songId => {
+            songs.forEach((songId) => {
                 const existingSong = songsStorage.get(songId);
                 if (existingSong && existingSong.Some) {
-                    const duplicatedSong = updatedPlaylist.songs.find(id => id === songId);
+                    const duplicatedSong = updatedPlaylist.songs.find((id) => id === songId);
                     if (!duplicatedSong) {
                         updatedPlaylist.songs.push(songId);
-                        updatedPlaylist.totalDuration += existingSong.Some.duration;
+                        updatedPlaylist.totalDuration = updatedPlaylist.totalDuration + existingSong.Some.duration;
                         addFlag = true;
                     }
                 }
-            })
+            });
 
             if (!addFlag) {
                 return Result.Err<Playlist, string>('Unable to find the songs you wanted to add or they all already exist.');
@@ -209,72 +222,77 @@ export function addSongsToPlaylist(id: string, songs: Vec<string>): Result<Playl
             playlistsStorage.insert(playlist.id, updatedPlaylist);
             return Result.Ok<Playlist, string>(updatedPlaylist);
         },
-        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotUpdate('playlist', id))
+        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotUpdate('playlist', id)),
     });
 }
 
 // Delete
 $update;
 export function deletePlaylist(id: string): Result<Playlist, string> {
+    if (!id || !id.trim()) {
+        return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty('Playlist id'));
+    }
+
     return match(playlistsStorage.get(id), {
         Some: (playlist) => {
             if (playlist.admin.toString() !== ic.caller().toString()) {
-                return Result.Err<Playlist,string>(ErrMessages.nonAdmin(id));
+                return Result.Err<Playlist, string>(ErrMessages.nonAdmin(id));
             }
 
             playlistsStorage.remove(id);
             return Result.Ok<Playlist, string>(playlist);
         },
-        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotRemove('playlist', id))
+        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotRemove('playlist', id)),
     });
 }
 
 $update;
 export function deleteSongFromPlaylist(playlistId: string, songId: string): Result<Playlist, string> {
-    if (playlistId === "") {
+    if (!playlistId || !playlistId.trim()) {
         return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty('Playlist id'));
     }
 
-    if (songId === "") {
+    if (!songId || !songId.trim()) {
         return Result.Err<Playlist, string>(ErrMessages.fieldCannotBeEmpty('Song id'));
     }
 
     return match(playlistsStorage.get(playlistId), {
         Some: (playlist) => {
             if (playlist.admin.toString() !== ic.caller().toString()) {
-                return Result.Err<Playlist,string>(ErrMessages.nonAdmin(playlistId));
+                return Result.Err<Playlist, string>(ErrMessages.nonAdmin(playlistId));
             }
 
-            const updatedPlaylist: Playlist = {...playlist};
-            const songIndex = updatedPlaylist.songs.findIndex(id => id === songId);
-            if (songIndex != -1) {
+            const updatedPlaylist: Playlist = { ...playlist };
+            const songIndex = updatedPlaylist.songs.findIndex((id) => id === songId);
+            if (songIndex !== -1) {
                 const deletingSong = songsStorage.get(songId).Some;
-                if (deletingSong && updatedPlaylist.totalDuration - deletingSong.duration >= 0)
-                    updatedPlaylist.totalDuration -= deletingSong.duration;
-                else
-                    updatedPlaylist.totalDuration = BigInt(0);
+                if (deletingSong && updatedPlaylist.totalDuration - deletingSong.duration >= int64(0)) {
+                    updatedPlaylist.totalDuration = updatedPlaylist.totalDuration - deletingSong.duration;
+                } else {
+                    updatedPlaylist.totalDuration = int64(0);
+                }
 
                 updatedPlaylist.songs.splice(songIndex, 1);
                 updatedPlaylist.updatedAt = Opt.Some(ic.time());
-                playlistsStorage.insert(playlist.id, updatedPlaylist)
+                playlistsStorage.insert(playlist.id, updatedPlaylist);
             }
 
             return Result.Ok<Playlist, string>(updatedPlaylist);
         },
-        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotRemove('playlist', playlistId))
+        None: () => Result.Err<Playlist, string>(ErrMessages.couldNotRemove('playlist', playlistId)),
     });
 }
 
 // A workaround to make uuid package work with Azle
 globalThis.crypto = {
     // @ts-ignore
-   getRandomValues: () => {
-    let array = new Uint8Array(32)
+    getRandomValues: () => {
+        let array = new Uint8Array(32);
 
-    for (let i = 0; i < array.length; i++) {
-        array[i] = Math.floor(Math.random() * 256)
-    }
+        for (let i = 0; i < array.length; i++) {
+            array[i] = Math.floor(Math.random() * 256);
+        }
 
-    return array
-   }
-}
+        return array;
+    },
+};
