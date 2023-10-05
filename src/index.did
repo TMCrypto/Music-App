@@ -1,0 +1,47 @@
+type Playlist = record {
+  id : text;
+  admin : principal;
+  name : text;
+  createdAt : nat64;
+  totalDuration : int64;
+  description : text;
+  songs : vec text;
+  updatedAt : opt nat64;
+};
+type PlaylistPayload = record { name : text; description : text };
+type Song = record {
+  id : text;
+  title : text;
+  duration : int64;
+  singers : vec text;
+  mimeType : text;
+  fileName : text;
+  genre : text;
+  releaseDate : text;
+  uploadedAt : nat64;
+};
+type SongPayload = record {
+  title : text;
+  duration : int64;
+  singers : vec text;
+  mimeType : text;
+  fileName : text;
+  genre : text;
+  releaseDate : text;
+};
+type _AzleResult = variant { Ok : Playlist; Err : text };
+type _AzleResult_1 = variant { Ok : vec Playlist; Err : text };
+type _AzleResult_2 = variant { Ok : Song; Err : text };
+type _AzleResult_3 = variant { Ok : vec Song; Err : text };
+service : () -> {
+  addSongsToPlaylist : (text, vec text) -> (_AzleResult);
+  createPlaylist : (PlaylistPayload) -> (_AzleResult);
+  deletePlaylist : (text) -> (_AzleResult);
+  deleteSongFromPlaylist : (text, text) -> (_AzleResult);
+  getPlaylist : (text) -> (_AzleResult) query;
+  getPlaylists : () -> (_AzleResult_1) query;
+  getSong : (text) -> (_AzleResult_2) query;
+  getSongs : () -> (_AzleResult_3) query;
+  updatePlaylist : (text, PlaylistPayload) -> (_AzleResult);
+  uploadSong : (SongPayload) -> (_AzleResult_2);
+}
