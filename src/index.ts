@@ -265,16 +265,101 @@ export function deleteSongFromPlaylist(playlistId: string, songId: string): Resu
     });
 }
 
+// Function 1: Get songs by genre
+$query;
+export function getSongsByGenre(genre: string): Result<Vec<Song>, string> {
+    return Result.Ok(songsStorage
+        .values()
+        .filter(song => song.genre === genre)
+    );
+}
+
+// Function 2: Update song information
+$update;
+export function updateSong(id: string, payload: SongPayload): Result<Song, string> {
+    return match(songsStorage.get(id), {
+        Some: (song) => {
+            // Check if the caller is authorized to update the song (e.g., admin or owner check)
+            // Add your authorization logic here.
+            const updatedSong: Song = { ...song, ...payload };
+            songsStorage.insert(id, updatedSong);
+            return Result.Ok<Song, string>(updatedSong);
+        },
+        None: () => Result.Err<Song, string>(ErrMessages.couldNotUpdate('song', id))
+    });
+}
+
+// Function 3: Get songs by singer
+$query;
+export function getSongsBySinger(singer: string): Result<Vec<Song>, string> {
+    return Result.Ok(songsStorage
+        .values()
+        .filter(song => song.singers.includes(singer))
+    );
+}
+
+// Function 4: Get playlists by admin
+$query;
+export function getPlaylistsByAdmin(admin: Principal): Result<Vec<Playlist>, string> {
+    return Result.Ok(playlistsStorage
+        .values()
+        .filter(playlist => playlist.admin.toString() === admin.toString())
+    );
+}
+
+// Function 5: Get playlist songs
+$query;
+export function getPlaylistSongs(id: string): Result<Vec<Song>, string> {
+    return match(playlistsStorage.get(id), {
+        Some: (playlist) => {
+            const songIds = playlist.songs;
+            const playlistSongs = songIds.map(songId => songsStorage.get(songId).Some);
+            return Result.Ok(playlistSongs);
+        },
+        None: () => Result.Err<Playlist, string>(ErrMessages.recordWithIdNotFound('Playlist', id))
+    });
+}
+
+// Function 6: Get the total duration of a playlist
+$query;
+export function getPlaylistTotalDuration(id: string): Result<int64, string> {
+    return match(playlistsStorage.get(id), {
+        Some: (playlist) => Result.Ok(playlist.totalDuration),
+        None: () => Result.Err<Playlist, string>(ErrMessages.recordWithIdNotFound('Playlist', id))
+    });
+}
+
+// Function 7: Get the number of songs in a playlist
+$query;
+export function getPlaylistSongCount(id: string): Result<int64, string> {
+    return match(playlistsStorage.get(id), {
+        Some: (playlist) => Result.Ok(int64(playlist.songs.length)),
+        None: () => Result.Err<Playlist, string>(ErrMessages.recordWithIdNotFound('Playlist', id))
+    });
+}
+
+// Function 8: Get the list of playlists by genre
+$query;
+export function getPlaylistsByGenre(genre: string): Result<Vec<Playlist>, string> {
+    return Result.Ok(playlistsStorage
+        .values()
+        .filter(playlist => {
+            const playlistSongs = playlist.songs.map(songId => songsStorage.get(songId).Some);
+            return playlistSongs.some(song => song.genre === genre);
+        })
+    );
+}
+
 // A workaround to make uuid package work with Azle
 globalThis.crypto = {
     // @ts-ignore
-   getRandomValues: () => {
-    let array = new Uint8Array(32)
+    getRandomValues: () => {
+        let array = new Uint8Array(32)
 
-    for (let i = 0; i < array.length; i++) {
-        array[i] = Math.floor(Math.random() * 256)
+        for (let i = 0; i < array.length; i++) {
+            array[i] = Math.floor(Math.random() * 256)
+        }
+
+        return array
     }
-
-    return array
-   }
 }
